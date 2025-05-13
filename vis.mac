@@ -1,0 +1,29 @@
+/vis/open OGL
+##/vis/viewer/set/style wireframe
+
+/run/initialize
+
+/vis/scene/add/volume !maxTouchableDepth 3
+/vis/scene/add/axes
+/vis/sceneHandler/attach
+
+/vis/scene/endOfEventAction accumulate
+/vis/viewer/set/autoRefresh true
+
+/vis/drawVolume
+
+/vis/scene/add/trajectories smooth
+##/vis/modeling/trajectories/create/drawByCharge
+##/vis/modeling/trajectories/create/drawByParticleID
+
+#/gun/particle proton
+#/gun/energy 1 GeV
+
+/gun/particle opticalphoton
+/gun/energy 5.0 eV
+
+#/gun/position -8.5cm 0 -40cm
+#/gun/direction 0.55 0 1
+
+#/vis/scene/add/trajectories smooth
+#/vis/scene/endOfRunAction accumulate
