@@ -11,6 +11,8 @@
 #include "G4OpticalSurface.hh"
 #include "G4SDManager.hh"
 #include "SensitiveDetector.hh"
+#include "G4LogicalSkinSurface.hh"
+
 
 
     //defining pressurized nitrogen gas **********************************************
@@ -37,8 +39,13 @@
         absLengthArray[i] = absLength;
     }
 
-    // molecular nitrogen gas (G4_NITROGEN = N2)
-    G4Material* nitrogen = nist->FindOrBuildMaterial("G4_NITROGEN");
+    // molecular nitrogen gas (G4_lN2 = N2)
+    G4Material* nitrogen = nist->FindOrBuildMaterial("G4_lN2");
+    
+    if (!nitrogen) {
+    G4Exception("CreatePressurizedNitrogenWithOpticalProperties", "MyCode001", FatalException, "Failed to find G4_lN2 material.");
+    return nullptr;
+}
 
     // clone to preserve original
     G4Material* pressurizedNitrogen = new G4Material("PressurizedN2", 
@@ -66,7 +73,7 @@ DetectorConstruction::~DetectorConstruction() {}
     // Get materials
     G4NistManager* nist = G4NistManager::Instance();
     G4Material* worldMat = nist->FindOrBuildMaterial("G4_AIR");
-    G4Material* aerogelMat = nist->FindOrBuildMaterial("G4_SILICON_DIOXIDE");
+    //G4Material* aerogelMat = nist->FindOrBuildMaterial("G4_SILICON_DIOXIDE");
     G4Material* germaniumMat = nist->FindOrBuildMaterial("G4_Ge");
 
     // -------------------
@@ -128,8 +135,8 @@ DetectorConstruction::~DetectorConstruction() {}
     // -------------------
     // Barrel Gas Volume (Pressurized Nitrogen)
     // -------------------
-    G4double gasRadius = 10 * cm;
-    G4double gasHeight = 100 * cm;
+    G4double gasRadius = 3.5 * cm;
+    G4double gasHeight = 60 * cm;
     G4Material* nitrogenGas = CreatePressurizedNitrogenWithOpticalProperties(4.0 * atmosphere); // Set desired pressure
 
     auto* gasSolid = new G4Tubs("Gas", 0, gasRadius, gasHeight / 2, 0, 360 * deg);
@@ -137,6 +144,35 @@ DetectorConstruction::~DetectorConstruction() {}
     auto* gasPV = new G4PVPlacement(nullptr, {}, gasLV, "GasPV", worldLV, false, 0, true);
     
     
+    // -------------------
+    // Quartz Window in front of detector
+    // -------------------
+    G4Material* quartzMat = nist->FindOrBuildMaterial("G4_SILICON_DIOXIDE");
+
+    // Define optical properties
+    const G4int quartzNum = 2;
+    G4double quartzE[quartzNum] = {1.239841939*eV/0.9, 1.239841939*eV/0.2};
+    G4double quartzRIndex[quartzNum] = {1.46, 1.46}; // typical for fused silica
+    G4double quartzAbsLength[quartzNum] = {10*m, 10*m}; // nearly transparent
+
+    G4MaterialPropertiesTable* quartzMPT = new G4MaterialPropertiesTable();
+    quartzMPT->AddProperty("RINDEX", quartzE, quartzRIndex, quartzNum);
+    quartzMPT->AddProperty("ABSLENGTH", quartzE, quartzAbsLength, quartzNum);
+    quartzMat->SetMaterialPropertiesTable(quartzMPT);
+    
+    //Quartz Placement
+    
+    G4double quartzThickness = 0.66 * cm;
+    G4Tubs* quartzSolid = new G4Tubs("QuartzWindow", 0, gasRadius, quartzThickness / 2, 0, 360 * deg);
+    G4LogicalVolume* quartzLV = new G4LogicalVolume(quartzSolid, quartzMat, "QuartzLV");
+
+    // Placing quartz at the end of gas, just before the Ge pixels
+    G4ThreeVector quartzPos = G4ThreeVector(0, 0, gasHeight / 2 - quartzThickness / 2);
+    G4VPhysicalVolume* quartzPV = new G4PVPlacement(
+    nullptr, quartzPos, quartzLV, "QuartzPV", worldLV, false, 0, true
+    );
+
+
 
     // -------------------
     // Germanium Detector (Pixelated Surface)
@@ -171,9 +207,13 @@ DetectorConstruction::~DetectorConstruction() {}
             G4double yPos = -gridHalfSize + (j + 0.5) * pixelSize;
             //G4double xPos = (-aerogelRadius + pixelSize / 2) + i * pixelSize;
             //G4double yPos = (-aerogelRadius + pixelSize / 2) + j * pixelSize;
+                    
+            // Skip pixels outside the barrel radius
+            if (std::sqrt(xPos*xPos + yPos*yPos) > gasRadius) continue;
+
 
             new G4PVPlacement(
-                nullptr, G4ThreeVector(xPos, yPos, gasHeight / 2 - geThickness / 2), //moving pixels inside barrel, previously aerogelHeight
+                nullptr, G4ThreeVector(xPos, yPos, gasHeight / 2 + geThickness / 2), //moving pixels inside barrel, previously aerogelHeight
                 pixelLV, "PixelPV", worldLV, false, i * numPixelsY + j, true
             );
         }
@@ -219,28 +259,68 @@ DetectorConstruction::~DetectorConstruction() {}
     // -------------------
     // Reflective Inner Barrel Surface
     // -------------------
-    G4OpticalSurface* opticalSurface = new G4OpticalSurface("BarrelReflector");
-    opticalSurface->SetType(dielectric_metal);
-    opticalSurface->SetFinish(polished);
-    opticalSurface->SetModel(unified);
+///    G4OpticalSurface* opticalSurface = new G4OpticalSurface("BarrelReflector");
+///    opticalSurface->SetType(dielectric_metal);
+///    opticalSurface->SetFinish(polished);
+///    opticalSurface->SetModel(unified);
 
-    G4double ephoton[2] = {1.239841939*eV/0.9, 1.239841939*eV/0.2};
-    G4double reflectivity[2] = {0.5, 0.5};
+///    G4double ephoton[2] = {1.239841939*eV/0.9, 1.239841939*eV/0.2};
+///    G4double reflectivity[2] = {0.5, 0.5};
 
-    G4MaterialPropertiesTable* optSurfaceTable = new G4MaterialPropertiesTable();
-    optSurfaceTable->AddProperty("REFLECTIVITY", ephoton, reflectivity, 2);
-    opticalSurface->SetMaterialPropertiesTable(optSurfaceTable);
+///    G4MaterialPropertiesTable* optSurfaceTable = new G4MaterialPropertiesTable();
+///    optSurfaceTable->AddProperty("REFLECTIVITY", ephoton, reflectivity, 2);
+///    opticalSurface->SetMaterialPropertiesTable(optSurfaceTable);
 
     // check if PVs are non-null before creating border
-    if (!gasPV || !worldPV) {
-    	G4cerr << "[ERROR] gasPV or worldPV is null. Border surface not created." << G4endl;
-    } else {
-    	new G4LogicalBorderSurface("BarrelReflectorSurface", gasPV, worldPV, opticalSurface);
-    }
+///    if (!gasLV) {
+///    	G4cerr << "[ERROR] gasLV is null. Skin not created." << G4endl;
+///    } else {
+///    	new G4LogicalSkinSurface("BarrelReflectorSkin", gasLV, opticalSurface); //BorderSurface and 3rd argument worldPV for inc end caps as well
+///    }
+
+//********************(the above block is commented out to exclude the end with Ge pixels from being reflective)
 
 
-    return worldPV;
-}
+	// -------------------
+	// Reflective Shell Volume (side walls only)
+	// -------------------
+	G4double coatingThickness = 1.0 * mm;
+
+	auto* coatingSolid = new G4Tubs("ReflectiveShell", gasRadius, gasRadius + coatingThickness, gasHeight / 2, 0, 360 * deg);
+	auto* coatingLV = new G4LogicalVolume(coatingSolid, worldMat, "ReflectiveShellLV");
+
+	auto* coatingPV = new G4PVPlacement(
+	    nullptr,
+	    G4ThreeVector(),  // same center as gas
+	    coatingLV,
+	    "ReflectiveShellPV",
+	    worldLV,
+	    false,
+	    0,
+	    true
+	);
+
+	// Optional visualization
+	// coatingLV->SetVisAttributes(new G4VisAttributes(G4Colour(0.3, 0.3, 0.3))); // grey
+
+	// Reflective Optical Surface only for cylindrical side wall
+	G4OpticalSurface* opticalSurface = new G4OpticalSurface("BarrelReflector");
+	opticalSurface->SetType(dielectric_metal);
+	opticalSurface->SetFinish(polished);
+	opticalSurface->SetModel(unified);
+
+	G4double ephoton[2] = {1.239841939*eV/0.9, 1.239841939*eV/0.2};
+	G4double reflectivity[2] = {0.85, 0.85};
+
+	G4MaterialPropertiesTable* optSurfaceTable = new G4MaterialPropertiesTable();
+	optSurfaceTable->AddProperty("REFLECTIVITY", ephoton, reflectivity, 2);
+	opticalSurface->SetMaterialPropertiesTable(optSurfaceTable);
+
+	new G4LogicalSkinSurface("SideWallReflectorSkin", coatingLV, opticalSurface);
+
+
+	    return worldPV;
+	}
 
 
 
